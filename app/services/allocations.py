@@ -156,6 +156,36 @@ def assign_manual(
     return {"ok": True, "assignment": assignment}
 
 
+def edit_assignment(hod_id: int, *, assignment_id: int, weekly_hours: int) -> dict[str, Any]:
+    user = get_user(hod_id)
+    if not user or user["role"] != "hod":
+        return {"ok": False, "error": "hod only"}
+
+    with Session(engine) as session:
+        row = session.get(Assignment, assignment_id)
+        if row is None:
+            return {"ok": False, "error": "assignment not found"}
+
+        ta = session.get(Ta, row.ta_id)
+        dept = session.get(Department, 1)
+
+        # check the new hours as if the old hours were not assigned
+        used = _load_by_ta(session).get(ta.id, 0) - row.weekly_hours
+        experienced = (ta.id, row.course_id) in _experience_set(session)
+        budget = dept.budget_hours_remaining + row.weekly_hours
+        problem = guard.problem(Candidate(ta, experienced, used), weekly_hours, budget)
+        if problem:
+            return {"ok": False, "error": problem}
+
+        dept.budget_hours_remaining = budget - weekly_hours
+        row.weekly_hours = weekly_hours
+        session.add(dept)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {"ok": True, "assignment": row.model_dump()}
+
+
 def suggest(hod_id: int, *, course_id: int, weekly_hours: int, mode: str) -> dict[str, Any]:
     user = get_user(hod_id)
     if not user or user["role"] != "hod":

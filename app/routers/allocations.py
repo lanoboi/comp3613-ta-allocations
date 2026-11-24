@@ -42,6 +42,10 @@ class ConfirmBody(BaseModel):
     ta_id: int
 
 
+class EditBody(BaseModel):
+    weekly_hours: int
+
+
 def _actor_id(x_user_id: str | None) -> int:
     if not x_user_id:
         raise HTTPException(status_code=401, detail="X-User-Id header required")
@@ -143,3 +147,16 @@ def suggestion(suggestion_id: int) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="suggestion not found")
     return {"suggestion": row}
+
+
+@router.patch("/assignments/{assignment_id}")
+def edit(
+    assignment_id: int, body: EditBody, x_user_id: str | None = Header(default=None)
+) -> dict[str, Any]:
+    result = allocations.edit_assignment(
+        _actor_id(x_user_id), assignment_id=assignment_id, weekly_hours=body.weekly_hours
+    )
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "assignment not found" else 400
+        raise HTTPException(status_code=status, detail=result.get("error"))
+    return result
