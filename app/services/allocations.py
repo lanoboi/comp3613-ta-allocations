@@ -186,6 +186,24 @@ def edit_assignment(hod_id: int, *, assignment_id: int, weekly_hours: int) -> di
         return {"ok": True, "assignment": row.model_dump()}
 
 
+def remove_assignment(hod_id: int, *, assignment_id: int) -> dict[str, Any]:
+    user = get_user(hod_id)
+    if not user or user["role"] != "hod":
+        return {"ok": False, "error": "hod only"}
+
+    with Session(engine) as session:
+        row = session.get(Assignment, assignment_id)
+        if row is None:
+            return {"ok": False, "error": "assignment not found"}
+
+        dept = session.get(Department, 1)
+        dept.budget_hours_remaining += row.weekly_hours
+        session.add(dept)
+        session.delete(row)
+        session.commit()
+        return {"ok": True, "removed_id": assignment_id}
+
+
 def suggest(hod_id: int, *, course_id: int, weekly_hours: int, mode: str) -> dict[str, Any]:
     user = get_user(hod_id)
     if not user or user["role"] != "hod":
