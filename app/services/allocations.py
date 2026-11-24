@@ -9,6 +9,7 @@ from sqlmodel import Session, func, select
 
 from app.database import engine
 from app.models.assignment import Assignment
+from app.models.change_log import ChangeLog
 from app.models.course import Course
 from app.models.department import Department
 from app.models.suggestion import Suggestion
@@ -97,6 +98,27 @@ def _save_assignment(session: Session, ta_id: int, course_id: int, hours: int, d
     return row
 
 
+def _log(session: Session, user_id: int, action: str, row: Assignment, note: str = ""):
+    session.add(
+        ChangeLog(
+            user_id=user_id,
+            action=action,
+            assignment_id=row.id,
+            ta_id=row.ta_id,
+            course_id=row.course_id,
+            weekly_hours=row.weekly_hours,
+            note=note,
+            created_at=_now(),
+        )
+    )
+
+
+def history() -> list[dict[str, Any]]:
+    with Session(engine) as session:
+        rows = session.exec(select(ChangeLog).order_by(ChangeLog.id.desc())).all()
+        return [r.model_dump() for r in rows]
+
+
 def ta_remaining_hours(ta_id: int) -> int:
     with Session(engine) as session:
         used = _load_by_ta(session).get(ta_id, 0)
@@ -149,6 +171,8 @@ def assign_manual(
             return {"ok": False, "error": problem}
 
         row = _save_assignment(session, ta_id, course_id, weekly_hours, dept)
+        session.flush()
+        _log(session, hod_id, "create", row)
         session.commit()
         session.refresh(row)
         assignment = row.model_dump()
@@ -177,10 +201,12 @@ def edit_assignment(hod_id: int, *, assignment_id: int, weekly_hours: int) -> di
         if problem:
             return {"ok": False, "error": problem}
 
+        old_hours = row.weekly_hours
         dept.budget_hours_remaining = budget - weekly_hours
         row.weekly_hours = weekly_hours
         session.add(dept)
         session.add(row)
+        _log(session, hod_id, "edit", row, f"from {old_hours} to {weekly_hours} hours")
         session.commit()
         session.refresh(row)
         return {"ok": True, "assignment": row.model_dump()}
@@ -199,6 +225,7 @@ def remove_assignment(hod_id: int, *, assignment_id: int) -> dict[str, Any]:
         dept = session.get(Department, 1)
         dept.budget_hours_remaining += row.weekly_hours
         session.add(dept)
+        _log(session, hod_id, "remove", row)
         session.delete(row)
         session.commit()
         return {"ok": True, "removed_id": assignment_id}
@@ -278,6 +305,11 @@ def confirm(hod_id: int, *, suggestion_id: int, ta_id: int) -> dict[str, Any]:
         sug.override = ta_id != ranked[0]
         sug.confirmed_at = _now()
         session.add(sug)
+        session.flush()
+        if sug.override:
+            _log(session, hod_id, "confirm", row, "override, top suggestion was TA " + str(ranked[0]))
+        else:
+            _log(session, hod_id, "confirm", row)
         session.commit()
         session.refresh(row)
 

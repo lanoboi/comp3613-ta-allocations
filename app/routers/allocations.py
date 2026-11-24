@@ -169,3 +169,8 @@ def remove(assignment_id: int, x_user_id: str | None = Header(default=None)) -> 
         status = 404 if result.get("error") == "assignment not found" else 400
         raise HTTPException(status_code=status, detail=result.get("error"))
     return result
+
+
+@router.get("/history")
+def change_history() -> dict[str, Any]:
+    return {"history": allocations.history()}
