@@ -160,3 +160,12 @@ def edit(
         status = 404 if result.get("error") == "assignment not found" else 400
         raise HTTPException(status_code=status, detail=result.get("error"))
     return result
+
+
+@router.delete("/assignments/{assignment_id}")
+def remove(assignment_id: int, x_user_id: str | None = Header(default=None)) -> dict[str, Any]:
+    result = allocations.remove_assignment(_actor_id(x_user_id), assignment_id=assignment_id)
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "assignment not found" else 400
+        raise HTTPException(status_code=status, detail=result.get("error"))
+    return result
